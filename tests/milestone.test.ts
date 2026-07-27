@@ -12,6 +12,13 @@ import {
 
 const utf8 = (text: string) => new TextEncoder().encode(text);
 
+// Fixtures come from contentCid() rather than hand-typed CIDs: a subtly malformed
+// hand-typed fingerprint would make a passing test lie.
+const DRAFT_CID = await contentCid(utf8("track-3-first-draft"));
+const DISPUTED_CID = await contentCid(utf8("disputed-work"));
+const UNRELATED_CID = await contentCid(utf8("something-else"));
+const NEVER_SEEN_CID = await contentCid(utf8("never-seen"));
+
 const ALICE = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0";
 const BOB = "0x1111111111111111111111111111111111111111";
 
@@ -22,7 +29,7 @@ function milestone(overrides: Partial<Milestone> = {}): Milestone {
     title: "Track 3 First Draft",
     description: "Initial recording and composition",
     stage: "draft",
-    cid: contentCid(utf8("track-3-first-draft")),
+    cid: DRAFT_CID,
     recordedAt: "2024-10-20T11:23:00.000Z",
     witnesses: [],
     ...overrides,
@@ -191,10 +198,10 @@ describe("summariseTimeline", () => {
 });
 
 describe("firstInTime", () => {
-  const cid = contentCid(utf8("disputed-work"));
+  const cid = DISPUTED_CID;
   const early = milestone({ id: "early", cid, recordedAt: "2024-10-20T11:23:00.000Z" });
   const late = milestone({ id: "late", cid, recordedAt: "2025-02-01T09:00:00.000Z" });
-  const unrelated = milestone({ id: "other", cid: contentCid(utf8("something-else")) });
+  const unrelated = milestone({ id: "other", cid: UNRELATED_CID });
 
   it("awards priority to the earliest registration of the fingerprint", () => {
     expect(firstInTime(cid, [late, unrelated, early]).winner?.id).toBe("early");
@@ -205,7 +212,7 @@ describe("firstInTime", () => {
   });
 
   it("returns no winner for content that was never registered", () => {
-    expect(firstInTime(contentCid(utf8("never-seen")), [early, late])).toEqual({
+    expect(firstInTime(NEVER_SEEN_CID, [early, late])).toEqual({
       winner: null,
       contested: [],
     });

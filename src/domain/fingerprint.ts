@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 /**
  * Content fingerprinting for ProofStream.
  *
@@ -10,6 +8,12 @@ import { createHash } from "node:crypto";
  *
  * We emit CIDv1 / raw codec / sha2-256 / base32-lower — the `bafkrei...` form the
  * notary pipeline records in its proof objects.
+ *
+ * Hashing goes through Web Crypto rather than `node:crypto`. That is what lets one
+ * implementation run in the browser (where the creator's file is hashed and must never
+ * be uploaded), in the Worker, and in Node. It costs us an async API — a second, sync
+ * implementation for the server would be two answers to "what is this work's identity",
+ * which is exactly the thing a fingerprint may not have.
  */
 
 const BASE32_LOWER_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
@@ -60,14 +64,25 @@ export function base32Decode(text: string): Uint8Array {
   return Uint8Array.from(out);
 }
 
+async function sha256(content: Uint8Array): Promise<Uint8Array> {
+  // Copy into a fresh buffer: a Uint8Array view over a larger ArrayBuffer would
+  // otherwise hash the whole backing buffer rather than the view's bytes.
+  const bytes = new Uint8Array(content);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+}
+
+export function toHex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /** Lowercase `0x`-prefixed sha2-256 of the content, for display next to the CID. */
-export function sha256Hex(content: Uint8Array): string {
-  return `0x${createHash("sha256").update(content).digest("hex")}`;
+export async function sha256Hex(content: Uint8Array): Promise<string> {
+  return `0x${toHex(await sha256(content))}`;
 }
 
 /** The canonical ProofStream fingerprint for a piece of content. */
-export function contentCid(content: Uint8Array): string {
-  const digest = createHash("sha256").update(content).digest();
+export async function contentCid(content: Uint8Array): Promise<string> {
+  const digest = await sha256(content);
   const cidBytes = new Uint8Array(CID_V1_RAW_SHA256_PREFIX.length + digest.length);
   cidBytes.set(CID_V1_RAW_SHA256_PREFIX, 0);
   cidBytes.set(digest, CID_V1_RAW_SHA256_PREFIX.length);

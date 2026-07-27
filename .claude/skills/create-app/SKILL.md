@@ -59,7 +59,8 @@ that is the scaffolding step, not a reason to inline the logic.
 ```
 src/
   domain/          pure, dependency-free rules — the layer above must not fork these
-  <surface>/       the new app: routes, handlers, components
+  worker/          the OpenAPI Worker: Hono + chanfana, endpoints/, storage seams
+  <surface>/       a new app: routes, handlers, components
 tests/
   <surface>.test.ts
 ```
@@ -68,6 +69,23 @@ Keep `src/domain/` free of network, filesystem, and framework imports. It stays 
 the rules that decide authorship can be tested exhaustively and audited by a non-engineer.
 Endpoint calls (Alchemy, Pinata, gateway) live in the surface layer behind an interface
 the tests can substitute.
+
+Hash through **Web Crypto**, never `node:crypto`. The same fingerprint implementation has
+to run in the browser, where the creator's file is hashed and must never be uploaded. A
+second, synchronous implementation for the server would be two answers to "what is this
+work's identity" — the one thing a fingerprint may not have.
+
+### Adding an endpoint to the Worker
+
+Class-based chanfana routes in `src/worker/endpoints/`, registered in `src/worker/index.ts`.
+Each declares its `schema` (tags, summary, request, responses) so the OpenAPI document and
+the validation come from one declaration. Storage goes through the `RegistryStore`
+interface — the KV implementation in the Worker, the in-memory one in tests, so endpoint
+behaviour is exercised end to end without workerd.
+
+Describe security-relevant response fields in the schema itself, not just in prose:
+`anchored` carries a `.describe()` telling consumers not to present an unanchored proof as
+chain-backed, and that text ships in the published API document.
 
 ## Endpoint wiring
 
@@ -84,9 +102,23 @@ A scaffolded app must:
 - keep keys, JWTs, and signatures out of logs, errors, and committed fixtures;
 - ship a `.env.example` with key *names* only.
 
+## Writes stay shut until a principal can be authenticated
+
+A registration is a claim of authorship. An endpoint that records one without an
+authenticated principal lets anyone file a claim against anyone's project, so the write
+path **fails closed** rather than trusting an owner or a plan supplied in the request
+body. `POST /api/registrations` is the worked example: it validates fully, then returns
+501 naming what blocks it. Deny by default is the rule; an open write path is not a
+"temporary" state to ship.
+
+Never take the account's plan from the client. Resolve it from the authenticated
+principal, and default to the most restrictive tier when it cannot be resolved.
+
 ## Tests are part of the scaffold, not a follow-up
 
-`npm run check` (typecheck + `vitest run`) must pass before a surface is called done. For
+`npm run check` (typecheck + `vitest run` + a Worker bundle) must pass before a surface is
+called done. The bundle step matters: code that type-checks but exceeds the size limit or
+pulls a Node built-in still fails to deploy, and CI is where that should surface. For
 every new module, cover:
 
 - **The happy path**, once.

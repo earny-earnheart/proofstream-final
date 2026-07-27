@@ -19,7 +19,8 @@ const SIGNATURE = `0x${"ab".repeat(65)}`;
 const TX_HASH = `0x${"cd".repeat(32)}`;
 
 const TRACK_3 = utf8("track-3-first-draft");
-const TRACK_3_CID = contentCid(TRACK_3);
+const TRACK_3_CID = await contentCid(TRACK_3);
+const OTHER_CID = await contentCid(utf8("someone-elses-song"));
 
 function proof(overrides: Partial<ProofObject> = {}): ProofObject {
   return {
@@ -133,7 +134,7 @@ describe("verifyCid", () => {
   });
 
   it("reports content that was never registered, without claiming it is invalid", () => {
-    const result = verifyCid(contentCid(utf8("someone-elses-song")), REGISTRY);
+    const result = verifyCid(OTHER_CID, REGISTRY);
     expect(result.status).toBe("unregistered");
     expect(result.registration).toBeUndefined();
   });
@@ -170,11 +171,13 @@ describe("verifyCid", () => {
 });
 
 describe("verifyContent", () => {
-  it("verifies from the raw bytes, so the file never has to be uploaded", () => {
-    expect(verifyContent(TRACK_3, REGISTRY).status).toBe("verified");
+  it("verifies from the raw bytes, so the file never has to be uploaded", async () => {
+    expect((await verifyContent(TRACK_3, REGISTRY)).status).toBe("verified");
   });
 
-  it("does not match once a single byte of the content changes", () => {
-    expect(verifyContent(utf8("track-3-first-draft "), REGISTRY).status).toBe("unregistered");
+  it("does not match once a single byte of the content changes", async () => {
+    expect((await verifyContent(utf8("track-3-first-draft "), REGISTRY)).status).toBe(
+      "unregistered",
+    );
   });
 });

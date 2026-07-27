@@ -10,16 +10,22 @@ A registration's identity is the **CIDv1 / raw codec / sha2-256 / base32-lower**
 content bytes — the `bafkrei...` form the notary pipeline records.
 
 ```
-contentCid(bytes)     → "bafkrei..."      canonical identity
-sha256Hex(bytes)      → "0x..."           display only, never a key
-isContentCid(value)   → boolean           structural check, says nothing about registration
-digestFromCid(cid)    → Uint8Array        re-hash and compare, for independent verification
-base32Encode/Decode                       RFC 4648, lowercase, unpadded (multibase `b`)
+contentCid(bytes)     → Promise<"bafkrei...">   canonical identity
+sha256Hex(bytes)      → Promise<"0x...">        display only, never a key
+isContentCid(value)   → boolean                 structural check, says nothing about registration
+digestFromCid(cid)    → Uint8Array              re-hash and compare, for independent verification
+base32Encode/Decode                             RFC 4648, lowercase, unpadded (multibase `b`)
+toHex(bytes)                                    runtime-agnostic hex, no Buffer
 ```
 
-The CID is computed client-side. This is what lets the Verify screen promise the file never
-leaves the creator's machine, and it is why `verifyContent` takes bytes rather than a path
-or an upload handle.
+Hashing goes through **Web Crypto**, which is why the two hashing functions are async.
+That is the price of one implementation that runs in the browser, the Worker, and Node —
+and the browser is not optional here, because the Verify screen fingerprints the creator's
+file locally and must never upload it. `verifyContent` takes bytes rather than a path or
+an upload handle for the same reason.
+
+Do not add a synchronous `node:crypto` variant for server use. Two implementations of a
+fingerprint is two answers to "what is this work's identity".
 
 `isContentCid` is a *shape* check. It answers "is this a fingerprint", never "is this
 registered" — conflating the two is how an unregistered work gets shown as verified.

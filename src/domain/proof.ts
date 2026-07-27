@@ -131,9 +131,9 @@ export function verifyCid(cid: string, registry: readonly RegistryEntry[]): Veri
 }
 
 /** Verify a file the caller holds, without uploading it. */
-export function verifyContent(
+export async function verifyContent(
   content: Uint8Array,
   registry: readonly RegistryEntry[],
-): VerificationResult {
-  return verifyCid(contentCid(content), registry);
+): Promise<VerificationResult> {
+  return verifyCid(await contentCid(content), registry);
 }
