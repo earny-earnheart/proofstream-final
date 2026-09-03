@@ -1,0 +1,31 @@
+# Node modules
+/node_modules
+
+# Compilation output
+/dist
+
+# pnpm deploy output
+/bundle
+
+# Hardhat Build Artifacts
+/artifacts
+
+# Hardhat compilation (v2) support directory
+/cache
+
+# Typechain output
+/types
+
+# Hardhat coverage reports
+/coverage
+
+# Secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+env-*
+*.env
+*.env.rtf
+*.env.txt
+*.env.local
+PINATA_JWT*

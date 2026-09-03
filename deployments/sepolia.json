@@ -1,0 +1,27 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "history": [
+    {
+      "address": "0x3dB065F946787C223AFEfe31E670BD31b7F05066",
+      "txHash": "0x6e68989846f70b61b24b181a08ad0a5f64bcb8838a905d21cee79f13f4c09df5",
+      "blockNumber": 11428989,
+      "deployer": "0x24B34AbA44CDFD995fCdD0228D52DF86F0Ca17e2",
+      "commit": null,
+      "compiledAt": "2026-08-05T00:00:00.000Z",
+      "verified": true,
+      "explorerUrl": "https://sepolia.etherscan.io/address/0x3dB065F946787C223AFEfe31E670BD31b7F05066",
+      "note": "commit is null because the repo had no commits at deploy time; commit the current tree and backfill this field for a reproducible-build record"
+    },
+    {
+      "address": "0x28196FbEA33E4a1BDd5d558C6b77166a49F15b90",
+      "txHash": "0x4fb89f27007b32f9bcc7ad5e029f0a8dd989569712ddfe59c15c664f54a6e515",
+      "blockNumber": 11617676,
+      "deployer": "0x24B34AbA44CDFD995fCdD0228D52DF86F0Ca17e2",
+      "commit": null,
+      "compiledAt": "2026-09-02T16:25:00.000Z",
+      "verified": true,
+      "explorerUrl": "https://sepolia.etherscan.io/address/0x28196FbEA33E4a1BDd5d558C6b77166a49F15b90"
+    }
+  ]
+}
