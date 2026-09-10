@@ -1,6 +1,6 @@
 # Domain model
 
-`src/domain/` is pure: no network, no filesystem, no framework. That purity is deliberate —
+`worker/src/domain/` is pure: no network, no filesystem, no framework. That purity is deliberate —
 these are the rules that decide who owns a work, so they must be exhaustively testable and
 readable by someone who is not an engineer.
 

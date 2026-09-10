@@ -36,7 +36,7 @@ touches identity.
 
 ## Reuse the domain layer — do not re-implement it
 
-`src/domain/` is the source of truth. New code imports from it; it does not re-derive
+`worker/src/domain/` is the source of truth. New code imports from it; it does not re-derive
 hashing, ordering, or validation, because two implementations of "which registration came
 first" is two answers in a dispute.
 
@@ -51,21 +51,27 @@ first" is two answers in a dispute.
 | Back the Verify screen | `verifyCid` / `verifyContent` | a direct registry query |
 | Gate on plan limits | `checkRegistrationQuota(plan, used)` | a hard-coded number |
 
-If the domain layer genuinely lacks something, extend `src/domain/` and test it there —
+If the domain layer genuinely lacks something, extend `worker/src/domain/` and test it there —
 that is the scaffolding step, not a reason to inline the logic.
 
 ## Scaffold layout
 
+The repository is a monorepo of independent package roots. The root package is the Hardhat
+contracts project; everything below belongs to `worker/`, which has its own
+`package.json`, `tsconfig.json`, and `node_modules`. A new surface either lives inside
+`worker/` or becomes a sibling package root — it does not add itself to the root package.
+
 ```
-src/
-  domain/          pure, dependency-free rules — the layer above must not fork these
-  worker/          the OpenAPI Worker: Hono + chanfana, endpoints/, storage seams
-  <surface>/       a new app: routes, handlers, components
-tests/
-  <surface>.test.ts
+worker/
+  src/
+    domain/        pure, dependency-free rules — the layer above must not fork these
+    worker/        the OpenAPI Worker: Hono + chanfana, endpoints/, storage seams
+    <surface>/     a new app: routes, handlers, components
+  tests/
+    <surface>.test.ts
 ```
 
-Keep `src/domain/` free of network, filesystem, and framework imports. It stays pure so
+Keep `worker/src/domain/` free of network, filesystem, and framework imports. It stays pure so
 the rules that decide authorship can be tested exhaustively and audited by a non-engineer.
 Endpoint calls (Alchemy, Pinata, gateway) live in the surface layer behind an interface
 the tests can substitute.
@@ -77,7 +83,7 @@ work's identity" — the one thing a fingerprint may not have.
 
 ### Adding an endpoint to the Worker
 
-Class-based chanfana routes in `src/worker/endpoints/`, registered in `src/worker/index.ts`.
+Class-based chanfana routes in `worker/src/worker/endpoints/`, registered in `worker/src/worker/index.ts`.
 Each declares its `schema` (tags, summary, request, responses) so the OpenAPI document and
 the validation come from one declaration. Storage goes through the `RegistryStore`
 interface — the KV implementation in the Worker, the in-memory one in tests, so endpoint
@@ -116,8 +122,8 @@ principal, and default to the most restrictive tier when it cannot be resolved.
 
 ## Tests are part of the scaffold, not a follow-up
 
-`npm run check` (typecheck + `vitest run` + a Worker bundle) must pass before a surface is
-called done. The bundle step matters: code that type-checks but exceeds the size limit or
+`npm run check` from `worker/` (typecheck + `vitest run` + a Worker bundle) must pass
+before a surface is called done. The bundle step matters: code that type-checks but exceeds the size limit or
 pulls a Node built-in still fails to deploy, and CI is where that should surface. For
 every new module, cover:
 
@@ -128,7 +134,7 @@ every new module, cover:
   priority must preserve that rather than picking arbitrarily.
 - **Boundaries, not just middles.** Quota tests check 4/5/6, not 1.
 - **Round-trips** for anything encoded — encode/decode, hash/verify.
-- **Known-answer vectors** for anything cryptographic. `tests/fingerprint.test.ts` pins
+- **Known-answer vectors** for anything cryptographic. `worker/tests/fingerprint.test.ts` pins
   RFC 4648 base32 vectors and published CIDs; an implementation that only agrees with
   itself proves nothing.
 
@@ -145,7 +151,7 @@ hand-typed hashes — a hand-typed CID that is subtly malformed makes a passing 
 - **Do not claim "notarized."** ProofStream produces a blockchain-anchored attestation.
   A notarial act requires a commissioned notary; the wrong word invites a challenge that
   the right word does not. See `proofstream-notary`.
-- **Quota copy and quota code share one source.** `src/domain/plans.ts` backs both the
+- **Quota copy and quota code share one source.** `worker/src/domain/plans.ts` backs both the
   pricing screen and the gate; changing one without the other is a billing defect.
 
 ## Finish

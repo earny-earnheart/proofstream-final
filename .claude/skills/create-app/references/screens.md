@@ -10,7 +10,7 @@ Public. Sells the promise and the price.
 
 - Headline: "Protect Your Creative Work **Before You Share It**".
 - Three value props: instant timestamping, legal protection, collaboration proof.
-- Pricing block — four tiers. **These numbers come from `src/domain/plans.ts`.** Do not
+- Pricing block — four tiers. **These numbers come from `worker/src/domain/plans.ts`.** Do not
   hard-code them into the page; the marketing copy and the quota gate must not drift.
 - Primary CTA → Onboarding. Secondary CTA → demo.
 

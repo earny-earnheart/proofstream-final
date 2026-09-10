@@ -97,7 +97,8 @@ before issuing. Never reuse an ID.
 
 ## Code
 
-- `npm run check` passes before anything is called done, and before any push to `main`.
+- `npm run check` (from `worker/`) passes before anything is called done, and before any
+  push to `main`. Contract changes additionally pass `npm test` at the repository root.
 - No `any` without written justification.
 - No new runtime dependency without TCW confirmation. The domain layer has none — keep it
   that way.
