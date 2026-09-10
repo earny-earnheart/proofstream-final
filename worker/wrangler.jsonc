@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chanfana-openapi-proofstream",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": {
+    "enabled": true
+  },
+  // The registry of registrations, their projects, and their proof objects.
+  // Create with:
+  //   npx wrangler kv namespace create REGISTRY_KV
+  //   npx wrangler kv namespace create REGISTRY_KV --preview
+  // then replace both ids below. Until then `wrangler deploy` will fail on the binding,
+  // which is the intended failure — the Worker has nothing to read without it.
+  "kv_namespaces": [
+    {
+      "binding": "REGISTRY_KV",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID",
+      "preview_id": "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+    }
+  ],
+  "vars": {
+    // Chain that anchoring targets. Left unset so nothing defaults to mainnet:
+    // an anchor that spends real gas is a hard stop requiring TCW confirmation.
+    // "ANCHOR_CHAIN_ID": "421614"
+  }
+}
