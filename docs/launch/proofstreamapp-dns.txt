@@ -1,3 +1,7 @@
+SUPERSEDED FOR CURRENT CUTOVER: use cloudflare/README.md. The domain owner has
+configured a direct Cloudflare Worker. The records below are historical Sites
+custom-domain instructions; do not apply them to the direct Worker deployment.
+
 ProofStream custom domain setup
 Domain: proofstreamapp.com
 Hosting: Sites (no Vercel migration needed)

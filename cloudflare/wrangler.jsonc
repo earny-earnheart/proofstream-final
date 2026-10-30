@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "proofstream-web",
+  "account_id": "7914583bf80f67154ca9364681c0af85",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-30",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "proofstreamapp.com", "custom_domain": true },
+    { "pattern": "www.proofstreamapp.com", "custom_domain": true }
+  ]
+}

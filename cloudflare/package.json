@@ -1,0 +1,12 @@
+{
+  "name": "proofstream-cloudflare-site",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Buildless ProofStream website and Cloudflare Workers Static Assets adapter",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "verify:production": "bash scripts/verify-production.sh"
+  },
+  "engines": { "node": ">=22" }
+}

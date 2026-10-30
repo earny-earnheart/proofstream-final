@@ -1,0 +1,20 @@
+proofstream-web/
+  .gitignore
+  README.md
+  VALIDATION.md
+  package.json
+  public/.well-known/security.txt
+  public/404.html
+  public/app.js
+  public/favicon.ico
+  public/favicon.svg
+  public/index.html
+  public/robots.txt
+  public/sitemap.xml
+  public/styles.css
+  scripts/verify-production.sh
+  src/worker.js
+  tests/verifier.test.mjs
+  tests/worker.test.mjs
+  wrangler.jsonc
+  FILE-TREE.txt
