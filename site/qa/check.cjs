@@ -1,0 +1,38 @@
+const {JSDOM}=require('jsdom');
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const {webcrypto,randomUUID,createHash}=require('node:crypto');
+const root=require('node:path').resolve(__dirname, '../dist')+'/';
+const dom=new JSDOM(fs.readFileSync(root+'index.html','utf8'),{url:'https://proofstream.test',runScripts:'outside-only',pretendToBeVisual:true});
+const w=dom.window,d=w.document;
+Object.defineProperty(w.crypto,'subtle',{value:webcrypto.subtle});
+w.crypto.randomUUID=randomUUID;w.scrollTo=()=>{};
+w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+w.HTMLDialogElement.prototype.close=function(){this.open=false;};
+w.eval(fs.readFileSync(root+'app.js','utf8'));
+const tick=()=>new Promise(r=>setTimeout(r,30));
+const submit=f=>f.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+async function go(hash){w.location.hash=hash;await tick();}
+(async()=>{
+assert.equal(d.querySelectorAll('.project-card').length,3);
+d.querySelector('[data-filter="Music"]').click();assert.equal(d.querySelectorAll('.project-card').length,1);
+d.querySelector('[data-filter="All projects"]').click();
+const search=d.querySelector('#search-projects');search.value='elsewhere';search.dispatchEvent(new w.Event('input'));assert.equal(d.querySelectorAll('.project-card').length,1);
+d.querySelector('.new-project').click();assert(d.querySelector('#project-dialog').open);
+const form=d.querySelector('#project-form');form.elements.name.value='A <script>new</script> idea';form.elements.category.value='Software';form.elements.description.value='Test project';submit(form);await tick();
+assert(d.querySelector('h1').textContent.includes('<script>'));assert.equal(d.querySelectorAll('#main script').length,0);
+assert.equal(JSON.parse(w.localStorage.getItem('proofstream-studio-v1')).length,1);
+d.querySelector('#add-milestone').click();
+const m=d.querySelector('#milestone-form');m.elements.title.value='First draft';m.elements.creator.value='local-profile';
+const content=Buffer.from('Original creative work');const file={name:'work.txt',size:content.length,arrayBuffer:async()=>content.buffer.slice(content.byteOffset,content.byteOffset+content.byteLength)};
+Object.defineProperty(m.elements.file,'files',{value:[file],configurable:true});submit(m);await tick();
+const saved=JSON.parse(w.localStorage.getItem('proofstream-studio-v1'))[0];assert.equal(saved.milestones.length,1);const hash=createHash('sha256').update(content).digest('hex');assert.equal(saved.milestones[0].hash,hash);
+await go('verify');d.querySelector('#verify-hash').value=hash;submit(d.querySelector('#verify-form'));await tick();assert(d.querySelector('#verify-result').textContent.includes('Local record found'));
+d.querySelector('#verify-creator').value='another-creator';submit(d.querySelector('#verify-form'));await tick();assert(d.querySelector('#verify-result').textContent.includes('No matching local record'));
+d.querySelector('#verify-hash').value='invalid';submit(d.querySelector('#verify-form'));await tick();assert(d.querySelector('.form-error').textContent.includes('valid 64-character'));
+await go('roadmap');assert.equal(d.querySelectorAll('.roadmap-list li').length,4);
+await go('help');assert.equal(d.querySelectorAll('details').length,6);
+d.querySelector('#wallet').click();await tick();assert(d.querySelector('#toast').textContent.includes('MetaMask'));
+d.querySelector('#menu').click();assert.equal(d.querySelector('#menu').getAttribute('aria-expanded'),'true');
+console.log('PASS: project/filter/search, escaped input, persistence, milestone SHA-256, creator-specific verification, invalid-input handling, navigation, wallet fallback, mobile menu.');dom.window.close();
+})().catch(e=>{console.error(e);dom.window.close();process.exitCode=1;});

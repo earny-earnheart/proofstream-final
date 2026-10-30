@@ -18,6 +18,7 @@
 
 # Hardhat coverage reports
 /coverage
+/coverage.json
 
 # Secrets — NEVER commit these
 .env
@@ -29,3 +30,12 @@ env-*
 *.env.txt
 *.env.local
 PINATA_JWT*
+
+# Nested site QA dependencies and local output
+/site/qa/node_modules
+/site/qa/coverage
+
+# Cloudflare local state, dependencies and secret bindings
+/cloudflare/.wrangler
+/cloudflare/node_modules
+/cloudflare/.dev.vars*
