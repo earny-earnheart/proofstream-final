@@ -8,6 +8,7 @@ proofstream-web/
   public/app.js
   public/favicon.ico
   public/favicon.svg
+  public/logo/proofstream-logo.jpg
   public/index.html
   public/robots.txt
   public/sitemap.xml

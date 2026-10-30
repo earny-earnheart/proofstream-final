@@ -94,3 +94,7 @@ This is the direct Cloudflare deployment requested in the supplied brief. The Si
 copy remains a separate public demo. Do not apply the earlier Sites A/TXT routing
 instructions to this Worker cutover; the domain owner has configured Cloudflare.
 GitHub preserves this project; a GitHub push alone does not deploy it.
+
+## Original brand asset
+
+The supplied JPG is served at `/logo/proofstream-logo.jpg` without modification. CSS displays a proportional viewport around the wordmark, with navy/cyan interface colors. This package updates the Cloudflare site; the earlier Sites preview is a separate deployment.

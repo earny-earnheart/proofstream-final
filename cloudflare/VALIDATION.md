@@ -15,3 +15,5 @@
 
 Run `bash scripts/verify-production.sh` from your authenticated deployment computer
 after publishing; any failed check must be investigated before declaring success.
+
+Brand update: original logo integrated into sidebar, 404 and social metadata. Prior production deployment `5db086db-bc76-45f3-a572-e6204d2b9ade` passed all production checks according to the user-supplied terminal output. This logo update requires a new deployment.
