@@ -1,0 +1,427 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+
+/**
+ * @title ProofStream
+ * @dev Blockchain-based creative timeline and IP protection platform
+ * @notice Allows creators to register timestamped milestones of their creative work
+ */
+contract ProofStream is Ownable, ReentrancyGuard, Pausable {
+    
+    // ============ STATE VARIABLES ============
+    
+    struct Milestone {
+        bytes32 contentHash;        // SHA-256 hash of the work
+        uint256 timestamp;          // Block timestamp
+        string title;               // Title/description of milestone
+        string stage;               // "draft", "revision", "final", etc.
+        string ipfsHash;            // Optional IPFS hash for storage
+        bool isEncrypted;           // Whether content is encrypted
+        address[] witnesses;        // Optional witness addresses
+    }
+    
+    struct Project {
+        string projectId;           // Unique project identifier
+        address creator;            // Project owner
+        uint256 createdAt;          // Project creation timestamp
+        Milestone[] milestones;     // Array of milestones
+        bool isPublic;              // Public or private project
+        string category;            // "music", "art", "writing", etc.
+    }
+    
+    // Mapping: project hash => Project
+    mapping(bytes32 => Project) public projects;
+    
+    // Mapping: creator address => array of project hashes
+    mapping(address => bytes32[]) public creatorProjects;
+    
+    // Mapping: content hash => registration info for quick lookup
+    mapping(bytes32 => RegistrationInfo) public registrations;
+    
+    struct RegistrationInfo {
+        bytes32 projectHash;
+        uint256 milestoneIndex;
+        uint256 timestamp;
+        address creator;
+        bool exists;
+    }
+    
+    // Mapping: creator => witness => isAuthorized
+    mapping(address => mapping(address => bool)) public authorizedWitnesses;
+    
+    // Fee configuration
+    uint256 public registrationFee = 0.001 ether; // ~$2 at $2000 ETH
+    uint256 public witnessFee = 0.0005 ether;
+    
+    // Statistics
+    uint256 public totalProjects;
+    uint256 public totalMilestones;
+    
+    // ============ EVENTS ============
+    
+    event ProjectCreated(
+        bytes32 indexed projectHash,
+        address indexed creator,
+        string projectId,
+        uint256 timestamp
+    );
+    
+    event MilestoneRegistered(
+        bytes32 indexed projectHash,
+        bytes32 indexed contentHash,
+        address indexed creator,
+        uint256 milestoneIndex,
+        uint256 timestamp
+    );
+    
+    event WitnessAdded(
+        bytes32 indexed projectHash,
+        uint256 milestoneIndex,
+        address indexed witness,
+        uint256 timestamp
+    );
+    
+    event ProjectVisibilityChanged(
+        bytes32 indexed projectHash,
+        bool isPublic
+    );
+    
+    event FeeUpdated(uint256 newFee, string feeType);
+    
+    // ============ MODIFIERS ============
+    
+    modifier onlyProjectOwner(bytes32 projectHash) {
+        require(
+            projects[projectHash].creator == msg.sender,
+            "Not project owner"
+        );
+        _;
+    }
+    
+    modifier projectExists(bytes32 projectHash) {
+        require(
+            projects[projectHash].creator != address(0),
+            "Project does not exist"
+        );
+        _;
+    }
+    
+    // ============ CONSTRUCTOR ============
+    
+    constructor() Ownable(msg.sender) {
+        // Initialize with owner
+    }
+    
+    // ============ MAIN FUNCTIONS ============
+    
+    /**
+     * @dev Create a new project
+     * @param projectId Unique identifier for the project
+     * @param category Category of work (music, art, writing, etc.)
+     * @param isPublic Whether project timeline is publicly visible
+     */
+    function createProject(
+        string memory projectId,
+        string memory category,
+        bool isPublic
+    ) external payable whenNotPaused returns (bytes32) {
+        require(bytes(projectId).length > 0, "Project ID required");
+        require(msg.value >= registrationFee, "Insufficient fee");
+        
+        // Create unique project hash
+        bytes32 projectHash = keccak256(
+            abi.encodePacked(msg.sender, projectId, block.timestamp)
+        );
+        
+        require(projects[projectHash].creator == address(0), "Project exists");
+        
+        // Initialize project
+        Project storage newProject = projects[projectHash];
+        newProject.projectId = projectId;
+        newProject.creator = msg.sender;
+        newProject.createdAt = block.timestamp;
+        newProject.isPublic = isPublic;
+        newProject.category = category;
+        
+        // Add to creator's projects
+        creatorProjects[msg.sender].push(projectHash);
+        
+        totalProjects++;
+        
+        emit ProjectCreated(projectHash, msg.sender, projectId, block.timestamp);
+        
+        return projectHash;
+    }
+    
+    /**
+     * @dev Register a milestone in a project
+     * @param projectHash Hash of the project
+     * @param contentHash SHA-256 hash of the work
+     * @param title Title/description of milestone
+     * @param stage Stage of work (draft, revision, final)
+     * @param ipfsHash Optional IPFS hash for full content
+     * @param isEncrypted Whether the content is encrypted
+     */
+    function registerMilestone(
+        bytes32 projectHash,
+        bytes32 contentHash,
+        string memory title,
+        string memory stage,
+        string memory ipfsHash,
+        bool isEncrypted
+    ) external payable projectExists(projectHash) onlyProjectOwner(projectHash) whenNotPaused {
+        require(msg.value >= registrationFee, "Insufficient fee");
+        require(contentHash != bytes32(0), "Content hash required");
+        require(!registrations[contentHash].exists, "Content already registered");
+        
+        Project storage project = projects[projectHash];
+        
+        // Create milestone
+        Milestone memory newMilestone = Milestone({
+            contentHash: contentHash,
+            timestamp: block.timestamp,
+            title: title,
+            stage: stage,
+            ipfsHash: ipfsHash,
+            isEncrypted: isEncrypted,
+            witnesses: new address[](0)
+        });
+        
+        project.milestones.push(newMilestone);
+        uint256 milestoneIndex = project.milestones.length - 1;
+        
+        // Register content hash for quick lookup
+        registrations[contentHash] = RegistrationInfo({
+            projectHash: projectHash,
+            milestoneIndex: milestoneIndex,
+            timestamp: block.timestamp,
+            creator: msg.sender,
+            exists: true
+        });
+        
+        totalMilestones++;
+        
+        emit MilestoneRegistered(
+            projectHash,
+            contentHash,
+            msg.sender,
+            milestoneIndex,
+            block.timestamp
+        );
+    }
+    
+    /**
+     * @dev Add a witness signature to a milestone
+     * @param projectHash Hash of the project
+     * @param milestoneIndex Index of the milestone
+     */
+    function addWitness(
+        bytes32 projectHash,
+        uint256 milestoneIndex
+    ) external payable projectExists(projectHash) whenNotPaused {
+        require(msg.value >= witnessFee, "Insufficient witness fee");
+        
+        Project storage project = projects[projectHash];
+        require(milestoneIndex < project.milestones.length, "Invalid milestone");
+        
+        // Check if already witnessed
+        address[] storage witnesses = project.milestones[milestoneIndex].witnesses;
+        for (uint256 i = 0; i < witnesses.length; i++) {
+            require(witnesses[i] != msg.sender, "Already witnessed");
+        }
+        
+        witnesses.push(msg.sender);
+        
+        emit WitnessAdded(projectHash, milestoneIndex, msg.sender, block.timestamp);
+    }
+    
+    /**
+     * @dev Authorize a witness for all future milestones
+     * @param witness Address to authorize
+     */
+    function authorizeWitness(address witness) external {
+        require(witness != address(0), "Invalid witness address");
+        authorizedWitnesses[msg.sender][witness] = true;
+    }
+    
+    /**
+     * @dev Revoke witness authorization
+     * @param witness Address to revoke
+     */
+    function revokeWitness(address witness) external {
+        authorizedWitnesses[msg.sender][witness] = false;
+    }
+    
+    /**
+     * @dev Toggle project visibility
+     * @param projectHash Hash of the project
+     */
+    function setProjectVisibility(
+        bytes32 projectHash,
+        bool isPublic
+    ) external projectExists(projectHash) onlyProjectOwner(projectHash) {
+        projects[projectHash].isPublic = isPublic;
+        emit ProjectVisibilityChanged(projectHash, isPublic);
+    }
+    
+    // ============ VIEW FUNCTIONS ============
+    
+    /**
+     * @dev Verify if content was registered
+     * @param contentHash Hash to verify
+     * @return exists Whether content is registered
+     * @return timestamp When it was registered
+     * @return creator Who registered it
+     */
+    function verifyContent(bytes32 contentHash) 
+        external 
+        view 
+        returns (bool exists, uint256 timestamp, address creator) 
+    {
+        RegistrationInfo memory info = registrations[contentHash];
+        return (info.exists, info.timestamp, info.creator);
+    }
+    
+    /**
+     * @dev Get all projects for a creator
+     * @param creator Address of creator
+     * @return Array of project hashes
+     */
+    function getCreatorProjects(address creator) 
+        external 
+        view 
+        returns (bytes32[] memory) 
+    {
+        return creatorProjects[creator];
+    }
+    
+    /**
+     * @dev Get project details
+     * @param projectHash Hash of the project
+     */
+    function getProject(bytes32 projectHash)
+        external
+        view
+        returns (
+            string memory projectId,
+            address creator,
+            uint256 createdAt,
+            uint256 milestoneCount,
+            bool isPublic,
+            string memory category
+        )
+    {
+        Project storage project = projects[projectHash];
+        return (
+            project.projectId,
+            project.creator,
+            project.createdAt,
+            project.milestones.length,
+            project.isPublic,
+            project.category
+        );
+    }
+    
+    /**
+     * @dev Get milestone details
+     * @param projectHash Hash of the project
+     * @param milestoneIndex Index of milestone
+     */
+    function getMilestone(bytes32 projectHash, uint256 milestoneIndex)
+        external
+        view
+        returns (
+            bytes32 contentHash,
+            uint256 timestamp,
+            string memory title,
+            string memory stage,
+            string memory ipfsHash,
+            bool isEncrypted,
+            address[] memory witnesses
+        )
+    {
+        Project storage project = projects[projectHash];
+        require(milestoneIndex < project.milestones.length, "Invalid milestone");
+        
+        Milestone storage milestone = project.milestones[milestoneIndex];
+        return (
+            milestone.contentHash,
+            milestone.timestamp,
+            milestone.title,
+            milestone.stage,
+            milestone.ipfsHash,
+            milestone.isEncrypted,
+            milestone.witnesses
+        );
+    }
+    
+    /**
+     * @dev Get total milestone count for a project
+     */
+    function getProjectMilestoneCount(bytes32 projectHash)
+        external
+        view
+        returns (uint256)
+    {
+        return projects[projectHash].milestones.length;
+    }
+    
+    // ============ ADMIN FUNCTIONS ============
+    
+    /**
+     * @dev Update registration fee
+     * @param newFee New fee in wei
+     */
+    function setRegistrationFee(uint256 newFee) external onlyOwner {
+        registrationFee = newFee;
+        emit FeeUpdated(newFee, "registration");
+    }
+    
+    /**
+     * @dev Update witness fee
+     * @param newFee New fee in wei
+     */
+    function setWitnessFee(uint256 newFee) external onlyOwner {
+        witnessFee = newFee;
+        emit FeeUpdated(newFee, "witness");
+    }
+    
+    /**
+     * @dev Pause contract
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+    
+    /**
+     * @dev Unpause contract
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+    
+    /**
+     * @dev Withdraw collected fees
+     */
+    function withdraw() external onlyOwner nonReentrant {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No funds to withdraw");
+        
+        (bool success, ) = payable(owner()).call{value: balance}("");
+        require(success, "Withdrawal failed");
+    }
+    
+    /**
+     * @dev Get contract balance
+     */
+    function getBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+    
+    // Allow contract to receive ETH
+    receive() external payable {}
+}

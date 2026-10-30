@@ -1,0 +1,11 @@
+{
+  "name": "proofstream-site-qa",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node check.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}

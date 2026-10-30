@@ -1,5 +1,14 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
+// Pin the compiler through npm so builds do not require a separate binary host.
+const { subtask } = require("hardhat/config");
+const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require("hardhat/builtin-tasks/task-names");
+subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD).setAction(async ({ solcVersion }, hre, runSuper) => {
+  if (solcVersion !== "0.8.20") return runSuper();
+  const longVersion = require("solc").version();
+  if (!longVersion.startsWith("0.8.20+")) throw new Error("Expected pinned solc 0.8.20");
+  return { compilerPath: require.resolve("solc/soljson.js"), isSolcJs: true, version: solcVersion, longVersion };
+});
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {

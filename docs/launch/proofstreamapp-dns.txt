@@ -1,0 +1,35 @@
+ProofStream custom domain setup
+Domain: proofstreamapp.com
+Hosting: Sites (no Vercel migration needed)
+Site project: appgprj_6ae438a6c1748191b43ae02d29d9a3d5
+Custom domain ID: appgdom_6ae43d3ce0088191801305b8f3a44a15
+
+Records returned by Sites for this domain:
+
+Type  Host/name                   Value
+A     @                           162.159.143.30
+A     @                           172.66.3.26
+TXT   _openai-site-verification    openai-site-verification=8ge7M5iyC2nKD77O2uhmD2-RYs-gAB0pbLgloX9yky0
+TXT   _cf-custom-hostname          acd08427-e7c1-4b74-826b-0f806037b77d
+
+The full TXT names are:
+_openai-site-verification.proofstreamapp.com
+_cf-custom-hostname.proofstreamapp.com
+
+Use the DNS provider's default TTL. If using Cloudflare DNS, use DNS-only for the
+routing records so Sites can validate and terminate HTTPS. Inspect existing apex
+A/AAAA/CNAME records before changing them; record the prior values for rollback.
+These two A records are the intended apex website targets. Do not change MX records
+or unrelated TXT records used for email. Do not change nameservers merely to add these.
+
+DNS-only changes have NOT been made by the assistant. Domain activation and HTTPS
+are pending. After records are added, refresh the domain's status in Sites to check
+validation and certificate readiness. Additional certificate validation records may
+be returned by subsequent status refreshes; use those exact returned values if needed.
+
+No www hostname has been configured. The apex proofstreamapp.com is the launch target.
+
+Browser-local projects do not move between the chatgpt.site and proofstreamapp.com
+origins. Export any existing records before switching; the current site has no import
+or shared server-side storage. The public launch is a local-workspace beta, not live
+blockchain registration, bond issuance, payments or witness attestation.
