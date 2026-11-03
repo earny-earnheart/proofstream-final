@@ -1,0 +1,31 @@
+# Chief of Staff dashboard Worker (Cloudflare account: Pantheon Enterprise).
+# Secrets are set with `npx wrangler secret put <NAME>`; never put them here:
+#   DASH_TOKEN      dashboard login (?t=<token> once, then a 30-day cookie)
+#   INGEST_TOKEN    bearer token for POST /api/events (agents, CI deploys)
+#   NOTION_TOKEN    Notion internal integration shared with the Morning Brief database
+#   JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN   optional; Jira source is off until all three are set
+#   JIRA_JQL        optional override of the default JQL
+name = "chief-of-staff-dash"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+[triggers]
+# Must match CRON_NIGHTLY / CRON_SYNC in src/index.js.
+crons = ["0 7 * * *", "30 14 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chief-of-staff"
+database_id = "6451b0f9-7cda-4b91-949c-5791c5120d98"
+migrations_dir = "migrations"
+
+[vars]
+# ☀️ Morning Brief data source (Notion, "Pantheon Consulting Group's Space").
+BRIEF_DATA_SOURCE_ID = "54be20db-5417-4b21-bb03-0be578e6730d"
+# Sites checked every sync. org must be proofstream | earnheart | pantheon.
+HEALTH_TARGETS = '''[
+  {"name":"proofstreamapp","org":"proofstream","url":"https://proofstreamapp.com"},
+  {"name":"earnheart","org":"earnheart","url":"https://earnheart.org"},
+  {"name":"edge-items-api","org":"pantheon","url":"https://edge-items-api.pantheon-platform.workers.dev/health"}
+]'''

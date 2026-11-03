@@ -1,0 +1,11 @@
+{
+  "name": "chief-of-staff-dash",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --experimental-sqlite --no-warnings test/worker.test.js",
+    "migrate": "wrangler d1 migrations apply chief-of-staff --remote",
+    "deploy": "wrangler d1 migrations apply chief-of-staff --remote && wrangler deploy"
+  },
+  "engines": { "node": ">=22.5" }
+}
