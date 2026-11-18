@@ -12,8 +12,12 @@ wallet-address connection. Files are read locally and are never uploaded. Connec
 a wallet does not request a signature or transaction.
 
 This concept uses browser-local storage and the device clock. It does not provide
-shared accounts, database storage, independent witnesses, blockchain registration,
+shared accounts, independent witnesses, blockchain registration,
 pinning, identity registration, payments or a bond offering. Examples are labeled.
+A signed receipt can be issued for a SHA-256 fingerprint and checked by anyone at
+`/receipts`. The D1 database behind that receipt is not created yet. See
+[docs/internal/receipts-plan.md](../docs/internal/receipts-plan.md). The placeholder
+`database_id` in `wrangler.jsonc` is not a real database.
 Cryptographic attestation and blockchain anchoring are in development; these are
 not statutory notarial acts. Records stored under the previous chatgpt.site hostname
 will not automatically appear on proofstreamapp.com: export them before switching.
@@ -31,15 +35,55 @@ The current concept exports records but does not yet import them.
 
 `404-page` is intentional: the app uses hash navigation (`/#verify`, `/#library`,
 `/#project/...`) inside the single root page. Hash fragments are never sent to the
-server and are not standalone crawlable pages. Only `/` belongs in sitemap.xml;
-unknown server paths must stay real HTTP 404 responses.
+server and are not standalone crawlable pages. `/` and `/receipts` are the crawlable documents in sitemap.xml.
+Hash routes are not listed. Unknown server paths must stay real HTTP 404 responses.
 
-The Worker redirects www first, then restricts methods to GET/HEAD, serves `/health`,
+The Worker redirects www first, then serves the signed-receipt API
+(`POST /api/v1/receipts`, `POST /api/v1/fingerprints`, `GET /api/v1/receipts/:id`,
+and `GET /.well-known/proofstream-receipt-key.json`). Every other path still
+allows only GET and HEAD. It serves `/health` and `/receipts`,
 normalizes trailing slashes and delegates assets. Security headers decorate all
 responses, including redirects, errors and health. Asset content type and ETag are
 preserved. No inline scripts/styles, `unsafe-inline` or `unsafe-eval` are needed:
 waveform heights use static CSS classes. Contact and company text are supplied by
 the owner; no claim of statutory notarization is made.
+
+## Signed receipts — owner setup, not run by this change
+
+`database_id` `00000000-0000-0000-0000-000000000000` is a placeholder. Do not deploy
+until it is replaced, the migration is applied, and `RECEIPT_SIGNING_KEY` is set.
+Do not commit the private key. Full design and verification steps are in
+`docs/internal/receipts-plan.md`.
+
+```sh
+npx wrangler@latest d1 create proofstream-proofs
+```
+
+Put the printed id in `wrangler.jsonc` (`PROOFS_DB` / `proofstream-proofs`), then apply
+the migration:
+
+```sh
+npx wrangler@latest d1 migrations apply proofstream-proofs --remote
+```
+
+Generate the key in its own step. It prints the private key. Do not commit it.
+
+```sh
+node --input-type=module -e 'import { generateKeyPairSync } from "node:crypto"; const { privateKey } = generateKeyPairSync("ed25519"); process.stdout.write(Buffer.from(privateKey.export({ type: "pkcs8", format: "der" })).toString("base64")); process.stdout.write("\n");'
+```
+
+Paste that single line when Wrangler prompts. Run this by itself so the next
+command is not read as the secret:
+
+```sh
+npx wrangler@latest secret put RECEIPT_SIGNING_KEY
+```
+
+Deploy only after the id, migration, and secret are in place:
+
+```sh
+npx wrangler@latest deploy
+```
 
 ## Exact commands (run from this folder)
 

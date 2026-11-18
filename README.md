@@ -28,6 +28,8 @@ the full work for review and ongoing development.
 
 The owner-configured `proofstream-web` Worker cutover is packaged in
 [cloudflare/](cloudflare/README.md). It preserves apex/www routing, strict security
-headers, disabled workers.dev/preview URLs, and a real 404. This supersedes the earlier
+headers, disabled workers.dev/preview URLs, and a real 404. Signed receipts for that
+Worker are specified in [docs/internal/receipts-plan.md](docs/internal/receipts-plan.md);
+the D1 database is a placeholder until the owner creates it. This supersedes the earlier
 Sites-domain DNS plan. Cloudflare publication must be run from the owner’s authenticated
 terminal; it has not been executed by this session.
