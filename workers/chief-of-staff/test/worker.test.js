@@ -290,7 +290,7 @@ test("HTTP: auth, write guards, decide and summary", async () => {
   // Ingest token cannot decide.
   const viaIngest = req("/api/decide", { method: "POST", body: "{}", headers: { authorization: "Bearer ingest", "content-type": "application/json" } });
   assert.equal((await worker.fetch(viaIngest, e)).status, 401);
-  // No DASH_TOKEN configured: page readable (legacy), writes refused.
+  // No DASH_TOKEN configured: reads and writes fail closed.
   assert.equal((await worker.fetch(jsonPost("/api/decide", { item_id: "h:1", decision: "approve" }), { ...e, DASH_TOKEN: undefined })).status, 503);
 
   const ok = await worker.fetch(jsonPost("/api/decide", { item_id: "h:1", decision: "approve" }, { origin: "https://cos.test" }), e);
@@ -305,6 +305,65 @@ test("HTTP: auth, write guards, decide and summary", async () => {
   assert.equal(login.status, 302);
   assert.match(login.headers.get("set-cookie"), /HttpOnly; Secure; SameSite=Lax/);
   assert.equal(login.headers.get("location"), "/");
+});
+
+test("HTTP: unset DASH_TOKEN fails closed on dashboard data", async () => {
+  const db = await withPolicy();
+  const open = { DB: db, INGEST_TOKEN: "ingest", HEALTH_TARGETS: "[]" };
+
+  for (const path of ["/api/summary", "/api/policy", "/api/verify", "/", "/index.html"]) {
+    const res = await worker.fetch(req(path), open);
+    assert.equal(res.status, 503, path);
+    assert.equal(res.headers.get("content-type"), "application/json; charset=utf-8");
+    assert.deepEqual(await res.json(), { error: "dashboard_not_configured" });
+  }
+
+  // A presented token does not open reads when the server token is unset.
+  const hinted = await worker.fetch(req("/api/summary?t=secret", {
+    headers: { authorization: "Bearer secret", cookie: "cos_token=secret" },
+  }), open);
+  assert.equal(hinted.status, 503);
+  assert.deepEqual(await hinted.json(), { error: "dashboard_not_configured" });
+
+  const empty = await worker.fetch(req("/api/policy"), { ...open, DASH_TOKEN: "" });
+  assert.equal(empty.status, 503);
+  assert.deepEqual(await empty.json(), { error: "dashboard_not_configured" });
+
+  // Writes stay refused and do not decide the item.
+  await openItem(db, ops({ item_id: "h:unset", verdicts: [{ gate: "gate.ops.needs_decision", verdict: "yes" }] }));
+  const decide = await worker.fetch(jsonPost("/api/decide", { item_id: "h:unset", decision: "approve" }), open);
+  assert.equal(decide.status, 503);
+  assert.equal(db.raw.prepare(`SELECT state FROM queue WHERE item_id='h:unset'`).get().state, "open");
+
+  // POST /api/events still uses INGEST_TOKEN, independent of DASH_TOKEN.
+  const body = {
+    action: "open", task: "deploy_record", title: "deployed", org: "proofstream",
+    source: "deploy", item_id: "deploy:unset:1", actor_identity: "ci:github",
+    verdicts: [{ gate: "gate.ops.health", verdict: "pass" }],
+  };
+  const denied = await worker.fetch(req("/api/events", {
+    method: "POST", headers: { authorization: "Bearer nope" }, body: JSON.stringify(body),
+  }), open);
+  assert.equal(denied.status, 401);
+  const ingested = await worker.fetch(req("/api/events", {
+    method: "POST", headers: { authorization: "Bearer ingest" }, body: JSON.stringify(body),
+  }), open);
+  assert.equal(ingested.status, 201);
+
+  // A valid ingest bearer can still read /api/verify; any other caller cannot.
+  const v = await worker.fetch(req("/api/verify", { headers: { authorization: "Bearer ingest" } }), open);
+  assert.equal(v.status, 200);
+  assert.equal((await v.json()).ok, true);
+  const badV = await worker.fetch(req("/api/verify", { headers: { authorization: "Bearer nope" } }), open);
+  assert.equal(badV.status, 503);
+  assert.deepEqual(await badV.json(), { error: "dashboard_not_configured" });
+
+  // With DASH_TOKEN set, unauthenticated reads stay 401 and a matching cookie still reads.
+  const locked = { ...open, DASH_TOKEN: "secret" };
+  assert.equal((await worker.fetch(req("/api/summary"), locked)).status, 401);
+  const ok = await worker.fetch(req("/api/summary", { headers: { cookie: "cos_token=secret" } }), locked);
+  assert.equal(ok.status, 200);
+  assert.equal(typeof (await ok.json()).counts, "object");
 });
 
 test("HTTP: ingest endpoint accepts the new task types with the ingest token", async () => {
