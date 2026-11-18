@@ -55,7 +55,7 @@ Then open `https://chief-of-staff-dash.<subdomain>.workers.dev/?t=<DASH_TOKEN>` 
 Keep in mind:
 
 - `wrangler.toml` has no `routes`. If the Worker has a custom domain in the Cloudflare dashboard, check it is still attached after the first deploy.
-- If `DASH_TOKEN` is not set, the page is readable by anyone with the URL (that was the original behaviour), and Approve/Reject/Sync refuse to run.
+- If `DASH_TOKEN` is not set, dashboard reads (the HTML page, `/api/summary`, `/api/policy`, and `/api/verify`) return `503` `{"error":"dashboard_not_configured"}`. Approve/Reject/Sync still refuse to run. `POST /api/events` still uses `INGEST_TOKEN`, and a valid ingest bearer can still call `/api/verify`.
 - Rollback: `npx wrangler@latest rollback`. The migration only adds nullable columns, so the old code keeps working.
 
 ## Sending deploys from CI

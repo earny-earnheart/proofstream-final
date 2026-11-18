@@ -17,9 +17,9 @@ function dashToken(request) {
   return url.searchParams.get("t") || bearer || cookieTok;
 }
 
-// Unchanged behaviour for reads: no DASH_TOKEN set means the page is open.
+// Fail closed: dashboard data is not served unless DASH_TOKEN is configured.
 function requireAuth(request, env) {
-  if (!env.DASH_TOKEN) return null;
+  if (!env.DASH_TOKEN) return reply({ error: "dashboard_not_configured" }, 503);
   return tokenOk(dashToken(request), env.DASH_TOKEN) ? null : new Response("Unauthorized", { status: 401 });
 }
 
