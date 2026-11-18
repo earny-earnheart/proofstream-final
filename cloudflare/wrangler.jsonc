@@ -15,5 +15,13 @@
   "routes": [
     { "pattern": "proofstreamapp.com", "custom_domain": true },
     { "pattern": "www.proofstreamapp.com", "custom_domain": true }
+  ],
+  "d1_databases": [
+    {
+      "binding": "PROOFS_DB",
+      "database_name": "proofstream-proofs",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
   ]
 }

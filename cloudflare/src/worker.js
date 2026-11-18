@@ -1,5 +1,6 @@
 // ProofStream's thin Cloudflare Workers Static Assets front controller.
 // The only routes configured for production are the apex and www custom domains.
+import { handleReceipts } from './receipts-server.js';
 const CANONICAL_HOST = 'proofstreamapp.com';
 
 // No third-party origins, inline scripts, eval, fonts or analytics are needed.
@@ -49,34 +50,64 @@ export default {
       url.protocol = 'https:';
       url.port = '';
       response = new Response(null, { status: 301, headers: { location: url.href } });
-    // 2. This browser-local concept has no POST API or server-submitted forms.
+    // 2. Signed-receipt API. Issuance is POST-only; every other path stays GET/HEAD.
+    } else if (isReceiptPath(url.pathname)) {
+      try {
+        response = await handleReceipts(request, url, env);
+      } catch {
+        response = new Response(JSON.stringify({ error: 'receipt_unavailable', verified: false }), {
+          status: 500,
+          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+        });
+      }
+    // 3. Pages other than the receipt API do not accept writes.
     } else if (request.method !== 'GET' && request.method !== 'HEAD') {
       response = new Response('Method not allowed\n', {
         status: 405,
         headers: { allow: 'GET, HEAD', 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
       });
-    // 3. Health is a live response and must never be cached.
+    // 4. Health is a live response and must never be cached.
     } else if (url.pathname === '/health') {
       response = Response.json({ status: 'ok', service: 'proofstream-web', time: new Date().toISOString() }, {
         headers: { 'cache-control': 'no-store' },
       });
-    // 4. Hash-based in-page navigation does not depend on trailing HTTP slashes.
+    // 5. Hash-based in-page navigation does not depend on trailing HTTP slashes.
     } else if (url.pathname !== '/' && url.pathname.endsWith('/')) {
       url.pathname = url.pathname.replace(/\/+$/, '') || '/';
       response = new Response(null, { status: 301, headers: { location: url.href } });
-    // 5. Cloudflare serves the files, including a real 404 for unknown paths.
+    // 6. The receipt checker is a real document, served from receipts.html.
+    } else if (url.pathname === '/receipts') {
+      response = await fetchAsset(new Request(receiptPageUrl(request), request), env);
+    // 7. Cloudflare serves the files, including a real 404 for unknown paths.
     } else {
-      try {
-        response = await env.ASSETS.fetch(request);
-      } catch {
-        response = new Response('The site is temporarily unavailable. Please try again.\n', {
-          status: 502,
-          headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
-        });
-      }
+      response = await fetchAsset(request, env);
     }
 
-    // 6–7. Security headers and non-canonical noindex apply to every response.
+    // Security headers and non-canonical noindex apply to every response.
     return secureResponse(response, request);
   },
 };
+
+function isReceiptPath(pathname) {
+  return pathname === '/.well-known/proofstream-receipt-key.json'
+    || pathname === '/api/v1/receipts'
+    || pathname === '/api/v1/fingerprints'
+    || pathname.startsWith('/api/v1/receipts/');
+}
+
+function receiptPageUrl(request) {
+  const assetUrl = new URL(request.url);
+  assetUrl.pathname = '/receipts.html';
+  return assetUrl;
+}
+
+async function fetchAsset(request, env) {
+  try {
+    return await env.ASSETS.fetch(request);
+  } catch {
+    return new Response('The site is temporarily unavailable. Please try again.\n', {
+      status: 502,
+      headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+    });
+  }
+}

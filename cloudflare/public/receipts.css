@@ -1,0 +1,21 @@
+.receipt-page a.brand { text-decoration: none; }
+.receipt-fields {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 10px 16px;
+  margin: 18px 0 0;
+}
+.receipt-fields dt { color: var(--muted); font-size: 12px; }
+.receipt-fields dd { margin: 0; overflow-wrap: anywhere; }
+.receipt-status.ok-text { color: #1d6b45; }
+.receipt-status.bad-text { color: #ba4a66; }
+#receipt-result[hidden] { display: none; }
+.receipt-steps { padding-left: 1.2rem; }
+.receipt-steps li { margin: 10px 0; }
+.receipt-page code,
+.receipt-page pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.receipt-page .panel a { color: var(--purple); text-decoration: underline; }
+.receipt-actions { margin-top: 16px; }

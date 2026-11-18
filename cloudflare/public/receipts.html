@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Check a signed receipt — ProofStream</title>
+  <meta name="description" content="Look up a ProofStream receipt and verify its Ed25519 signature against the published public key.">
+  <link rel="canonical" href="https://proofstreamapp.com/receipts">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/receipts.css">
+</head>
+<body class="receipt-page">
+<a class="skip" href="#receipt-lookup">Skip to receipt check</a>
+<main class="wide">
+  <a href="/" class="brand error-brand"><span class="brand-logo"><img src="/logo/proofstream-logo.jpg" width="1408" height="768" alt="ProofStream app.com"></span></a>
+  <div class="page-heading">
+    <div>
+      <span class="eyebrow">SIGNED RECEIPT</span>
+      <h1>Check a receipt</h1>
+      <p>Enter a receipt id. This page checks the Ed25519 signature in your browser against the published public key, and shows the server check beside it.</p>
+    </div>
+  </div>
+  <form class="panel" id="receipt-lookup" action="/receipts" method="get">
+    <label for="receipt-id">Receipt id
+      <input id="receipt-id" name="id" maxlength="36" required autocomplete="off" spellcheck="false" placeholder="00000000-0000-4000-8000-000000000000">
+    </label>
+    <div class="receipt-actions"><button class="primary" type="submit">Verify receipt</button></div>
+    <p class="form-error" id="receipt-error" role="alert"></p>
+  </form>
+  <noscript><p class="notice">This page uses a same-origin script for the live check. With scripts disabled, follow the steps below with an HTTPS client.</p></noscript>
+  <section class="panel" id="receipt-result" hidden>
+    <h2 class="receipt-status" id="receipt-status">Receipt</h2>
+    <dl class="receipt-fields">
+      <dt>Receipt id</dt><dd id="field-id"></dd>
+      <dt>Fingerprint</dt><dd id="field-fingerprint" class="hash"></dd>
+      <dt>Issued at</dt><dd id="field-issued"></dd>
+      <dt>Key id</dt><dd id="field-kid"></dd>
+      <dt>Signature</dt><dd id="field-signature" class="hash"></dd>
+      <dt>Canonical payload</dt><dd><pre id="field-payload" class="hash"></pre></dd>
+      <dt>Browser check</dt><dd id="field-browser"></dd>
+      <dt>Server check</dt><dd id="field-server"></dd>
+    </dl>
+    <p class="form-error" id="receipt-disagree" role="alert"></p>
+  </section>
+  <section class="panel">
+    <h2>Verify it yourself</h2>
+    <p>A receipt is verified only when this signature check succeeds. The page treats a receipt as verified when the browser check and the server check both succeed. Anyone can repeat the check without an account.</p>
+    <ol class="receipt-steps">
+      <li>Fetch the receipt: <code>GET /api/v1/receipts/&lt;receipt id&gt;</code>.</li>
+      <li>Fetch the public key: <code>GET /.well-known/proofstream-receipt-key.json</code>. It is a JWK with <code>kty</code> OKP, <code>crv</code> Ed25519, <code>x</code>, and <code>kid</code>.</li>
+      <li>Require the receipt <code>key_id</code> to equal the JWK <code>kid</code>. <code>kid</code> is <code>ed25519:</code> plus the first 16 lowercase hex characters of SHA-256 over the raw 32-byte public key.</li>
+      <li>Rebuild the canonical payload as UTF-8. Join these lines with LF and do not add a trailing newline:
+        <pre class="hash">proofstream-receipt/v1
+receipt_id:&lt;receipt_id&gt;
+fingerprint:&lt;64 lowercase hex&gt;
+issued_at:&lt;issued_at&gt;
+kid:&lt;key_id&gt;</pre>
+      </li>
+      <li>Base64url-decode the signature with no padding. It is 64 bytes.</li>
+      <li>Ed25519-verify that signature over the payload bytes with the JWK public key. Reject the receipt if verification fails, the key id differs, or the signing key is unavailable.</li>
+    </ol>
+    <p>The API does not send cross-origin read access. A third party verifies from an HTTPS client, or from this page on proofstreamapp.com. <code>POST /api/v1/receipts</code> and <code>POST /api/v1/fingerprints</code> issue a receipt for <code>{"fingerprint":"&lt;64 hex SHA-256&gt;"}</code>. The file is not uploaded. If <code>RECEIPT_SIGNING_KEY</code> is unset, issuance returns an error and does not store an unsigned receipt.</p>
+    <p><a href="/">Return to the workspace</a></p>
+  </section>
+</main>
+<script type="module" src="/receipts.js"></script>
+</body>
+</html>

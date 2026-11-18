@@ -3,9 +3,13 @@ proofstream-web/
   README.md
   VALIDATION.md
   package.json
+  migrations/0001_receipts.sql
   public/.well-known/security.txt
   public/404.html
   public/app.js
+  public/receipts.css
+  public/receipts.html
+  public/receipts.js
   public/favicon.ico
   public/favicon.svg
   public/logo/proofstream-logo.jpg
@@ -14,7 +18,9 @@ proofstream-web/
   public/sitemap.xml
   public/styles.css
   scripts/verify-production.sh
+  src/receipts-server.js
   src/worker.js
+  tests/receipts.test.mjs
   tests/verifier.test.mjs
   tests/worker.test.mjs
   wrangler.jsonc
