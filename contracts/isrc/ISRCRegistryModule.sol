@@ -44,6 +44,7 @@ abstract contract ISRCRegistryModule is AccessControl, Pausable {
     struct Record {
         address claimant;
         address pendingClaimant;
+        bytes32 pendingTransferHash;
         Status status;
         uint32 versionCount;
         bytes32 supersededBy;
@@ -66,7 +67,7 @@ abstract contract ISRCRegistryModule is AccessControl, Pausable {
     );
     event TransferProposed(bytes32 indexed isrcKey, address indexed from, address indexed to, bytes32 transferHash);
     event TransferCancelled(bytes32 indexed isrcKey, address indexed from, address indexed to);
-    event TransferAccepted(bytes32 indexed isrcKey, address indexed from, address indexed to);
+    event TransferAccepted(bytes32 indexed isrcKey, address indexed from, address indexed to, bytes32 transferHash);
     event DisputeOpened(bytes32 indexed isrcKey, address indexed opener, bytes32 reasonHash);
     event DisputeResolved(bytes32 indexed isrcKey, address indexed arbiter, address indexed claimant, bytes32 resolutionHash);
     event RecordingSuperseded(bytes32 indexed isrcKey, bytes32 indexed replacementKey, bytes32 reasonHash);
@@ -84,6 +85,7 @@ abstract contract ISRCRegistryModule is AccessControl, Pausable {
     error ZeroValue();
     error LengthMismatch();
     error NoPendingTransfer(bytes32 isrcKey);
+    error TransferChanged(bytes32 isrcKey);
 
     constructor(address admin, address issuer, address arbiter) {
         if (admin == address(0) || issuer == address(0) || arbiter == address(0)) revert ZeroValue();
@@ -145,6 +147,7 @@ abstract contract ISRCRegistryModule is AccessControl, Pausable {
         if (r.status != Status.Registered) revert RecordDisputed(isrcKey);
         if (newClaimant == address(0) || transferHash == bytes32(0)) revert ZeroValue();
         r.pendingClaimant = newClaimant;
+        r.pendingTransferHash = transferHash;
         emit TransferProposed(isrcKey, msg.sender, newClaimant, transferHash);
     }
 
@@ -154,19 +157,25 @@ abstract contract ISRCRegistryModule is AccessControl, Pausable {
         address to = r.pendingClaimant;
         if (to == address(0)) revert NoPendingTransfer(isrcKey);
         delete r.pendingClaimant;
+        delete r.pendingTransferHash;
         emit TransferCancelled(isrcKey, msg.sender, to);
     }
 
     /// @notice Step 2: the buyer accepts. Buyer inherits the full version history.
-    function acceptTransfer(bytes32 isrcKey) external whenNotPaused {
+    /// @param expectedTransferHash The agreement hash the buyer reviewed. Reverts if the
+    ///        claimant replaced the proposal after the buyer signed, so the acceptance
+    ///        is bound to one specific agreement.
+    function acceptTransfer(bytes32 isrcKey, bytes32 expectedTransferHash) external whenNotPaused {
         Record storage r = _existing(isrcKey);
         if (r.pendingClaimant == address(0)) revert NoPendingTransfer(isrcKey);
         if (msg.sender != r.pendingClaimant) revert NotAuthorized();
+        if (r.pendingTransferHash != expectedTransferHash) revert TransferChanged(isrcKey);
         if (r.status != Status.Registered) revert RecordDisputed(isrcKey);
         address from = r.claimant;
         r.claimant = msg.sender;
         delete r.pendingClaimant;
-        emit TransferAccepted(isrcKey, from, msg.sender);
+        delete r.pendingTransferHash;
+        emit TransferAccepted(isrcKey, from, msg.sender, expectedTransferHash);
     }
 
     // ─────────────────────────────── Disputes ────────────────────────────
@@ -180,6 +189,7 @@ abstract contract ISRCRegistryModule is AccessControl, Pausable {
         if (r.status == Status.Disputed) revert RecordDisputed(isrcKey);
         r.status = Status.Disputed;
         delete r.pendingClaimant;
+        delete r.pendingTransferHash;
         emit DisputeOpened(isrcKey, msg.sender, reasonHash);
     }
 
@@ -200,13 +210,18 @@ abstract contract ISRCRegistryModule is AccessControl, Pausable {
     }
 
     /// @notice Mark a duplicate ISRC as superseded by the surviving one. Never deletes it.
+    /// @dev The survivor must be live (not itself superseded), and a record can be
+    ///      superseded only once. Together these make `supersededBy` chains acyclic
+    ///      and always one hop to a live record.
     function supersede(bytes32 isrcKey, bytes32 replacementKey, bytes32 reasonHash) external onlyRole(ARBITER_ROLE) {
         Record storage r = _existing(isrcKey);
-        _existing(replacementKey);
         if (isrcKey == replacementKey) revert ZeroValue();
+        if (r.status == Status.Superseded) revert RecordSuperseded(isrcKey);
+        if (_existing(replacementKey).status == Status.Superseded) revert RecordSuperseded(replacementKey);
         r.status = Status.Superseded;
         r.supersededBy = replacementKey;
         delete r.pendingClaimant;
+        delete r.pendingTransferHash;
         emit RecordingSuperseded(isrcKey, replacementKey, reasonHash);
     }
 
@@ -283,6 +298,10 @@ abstract contract ISRCRegistryModule is AccessControl, Pausable {
 
     function pendingClaimantOf(bytes32 isrcKey) external view returns (address) {
         return _records[isrcKey].pendingClaimant;
+    }
+
+    function pendingTransferHashOf(bytes32 isrcKey) external view returns (bytes32) {
+        return _records[isrcKey].pendingTransferHash;
     }
 
     /// @notice Convenience: compute isrcKey from an already-normalized ISRC string.

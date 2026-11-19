@@ -230,6 +230,17 @@ paths:
       operationId: acceptTransfer
       summary: Buyer accepts. Buyer inherits the full version history.
       security: [{ oauth2: [rights:write] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agreement_evidence_hash]
+              properties:
+                agreement_evidence_hash:
+                  $ref: "#/components/schemas/Hash32"
+                  description: The agreement hash the buyer reviewed. Rejected with 409 if the proposal changed.
       responses:
         "200":
           description: Accepted.

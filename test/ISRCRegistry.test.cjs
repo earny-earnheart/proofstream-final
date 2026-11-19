@@ -33,6 +33,11 @@ describe("ProofStreamISRCRegistry", function () {
       expect(canonicalize({ b: [1, { d: true, c: null }], a: "\u00e9", n: 1e21, z: 0.1 }))
         .to.equal('{"a":"\u00e9","b":[1,{"c":null,"d":true}],"n":1e+21,"z":0.1}');
     });
+    it("rejects lone surrogates in values and keys (RFC 8785 3.2.2.2)", () => {
+      expect(() => payloadHash({ title: "\ud800" })).to.throw(/lone surrogate/);
+      expect(() => payloadHash({ ["\udc00"]: 1 })).to.throw(/lone surrogate/);
+      expect(() => payloadHash({ title: "a\ud83c\udfb5b" })).to.not.throw(); // valid pair
+    });
     it("validates UPC check digit", () => {
       expect(normalizeUpc("036000291452")).to.equal("0036000291452");
       expect(() => normalizeUpc("036000291453")).to.throw();
@@ -84,8 +89,9 @@ describe("ProofStreamISRCRegistry", function () {
     const T = ethers.id("assignment-agreement");
     it("two-step transfer; buyer inherits history", async () => {
       await reg.connect(artist).proposeTransfer(K1, buyer.address, T);
-      await expect(reg.connect(rando).acceptTransfer(K1)).to.be.revertedWithCustomError(reg, "NotAuthorized");
-      await expect(reg.connect(buyer).acceptTransfer(K1)).to.emit(reg, "TransferAccepted");
+      await expect(reg.connect(rando).acceptTransfer(K1, T)).to.be.revertedWithCustomError(reg, "NotAuthorized");
+      await expect(reg.connect(buyer).acceptTransfer(K1, T))
+        .to.emit(reg, "TransferAccepted").withArgs(K1, artist.address, buyer.address, T);
       const v = await reg.verify(K1);
       expect(v.claimant).to.equal(buyer.address);
       expect(v.versionCount).to.equal(1);
@@ -93,7 +99,16 @@ describe("ProofStreamISRCRegistry", function () {
     it("claimant can cancel", async () => {
       await reg.connect(artist).proposeTransfer(K1, buyer.address, T);
       await reg.connect(artist).cancelTransfer(K1);
-      await expect(reg.connect(buyer).acceptTransfer(K1)).to.be.revertedWithCustomError(reg, "NoPendingTransfer");
+      await expect(reg.connect(buyer).acceptTransfer(K1, T)).to.be.revertedWithCustomError(reg, "NoPendingTransfer");
+      expect(await reg.pendingTransferHashOf(K1)).to.equal(ethers.ZeroHash);
+    });
+    it("acceptance is bound to the agreement the buyer reviewed", async () => {
+      const T2 = ethers.id("swapped-agreement");
+      await reg.connect(artist).proposeTransfer(K1, buyer.address, T);
+      await reg.connect(artist).proposeTransfer(K1, buyer.address, T2); // claimant swaps terms
+      await expect(reg.connect(buyer).acceptTransfer(K1, T)).to.be.revertedWithCustomError(reg, "TransferChanged");
+      await reg.connect(buyer).acceptTransfer(K1, T2);
+      expect((await reg.verify(K1)).claimant).to.equal(buyer.address);
     });
   });
 
@@ -137,6 +152,15 @@ describe("ProofStreamISRCRegistry", function () {
       expect(v.status).to.equal(S.Superseded);
       expect(v.supersededBy).to.equal(K1);
       await expect(reg.connect(artist).updateClaim(K2, P1, C1, "x")).to.be.revertedWithCustomError(reg, "RecordSuperseded");
+    });
+    it("rejects supersede cycles and re-supersede", async () => {
+      await reg.connect(arbiter).supersede(K2, K1, ethers.id("duplicate"));
+      await expect(reg.connect(arbiter).supersede(K1, K2, ethers.id("reverse")))
+        .to.be.revertedWithCustomError(reg, "RecordSuperseded").withArgs(K2);
+      const K3 = isrcKey("USSKG2612347");
+      await reg.connect(issuer).registerRecording(K3, P1, C1, artist.address);
+      await expect(reg.connect(arbiter).supersede(K2, K3, ethers.id("repoint")))
+        .to.be.revertedWithCustomError(reg, "RecordSuperseded").withArgs(K2);
     });
     it("links a remix to its parent", async () => {
       await expect(reg.connect(issuer).linkDerivative(K2, K1, ethers.id("remix")))

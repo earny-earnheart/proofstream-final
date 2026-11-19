@@ -12,8 +12,17 @@ const ISRC_RE = /^[A-Z]{2}[A-Z0-9]{3}[0-9]{2}[0-9]{5}$/;
  * ECMAScript JSON serialization, which RFC 8785 adopts. No dependency, so it
  * runs on every Node version in CI.
  */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/** RFC 8785 §3.2.2.2: strings (values and keys) with unpaired surrogates are an error. */
+function jcsString(str) {
+  if (LONE_SURROGATE.test(str)) throw new Error("JCS: lone surrogate in string");
+  return JSON.stringify(str);
+}
+
 function canonicalize(value) {
-  if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+  if (value === null || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "string") return jcsString(value);
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new Error("JCS: non-finite number");
     return JSON.stringify(value);
@@ -21,7 +30,7 @@ function canonicalize(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
   if (typeof value === "object") {
     const keys = Object.keys(value).filter((k) => value[k] !== undefined).sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalize(value[k])}`).join(",")}}`;
+    return `{${keys.map((k) => `${jcsString(k)}:${canonicalize(value[k])}`).join(",")}}`;
   }
   throw new Error(`JCS: unsupported type ${typeof value}`);
 }

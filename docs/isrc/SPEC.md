@@ -102,6 +102,7 @@ Contracts, split-sheet PDFs, IDs, emails, legal names of non-public parties, and
 | Batch leaf | `keccak256(abi.encode(event_type, isrc_key, payload_hash, claim_hash, prev_hash))` | — |
 
 - **JCS** = RFC 8785 JSON Canonicalization Scheme. This replaces ad-hoc "sorted keys, no whitespace," which breaks on number formatting and Unicode escapes.
+- **Lone surrogates** in any string or key are rejected (RFC 8785 §3.2.2.2), so every anchored record can be canonicalized by an independent verifier.
 - **ISRC normalization:** uppercase, strip hyphens and spaces, then validate `^[A-Z]{2}[A-Z0-9]{3}[0-9]{2}[0-9]{5}$`. The hyphenated form is for display only.
 - **UPC:** validate the check digit, then left-pad UPC-A to 13 digits.
 - Why both hash functions: sha256 matches IPFS and industry file-hash practice, while keccak256 is cheap on-chain for lookup keys. The verifier must never compare one against the other.
@@ -216,10 +217,10 @@ The batcher holds `ISSUER_ROLE` and runs as its own key in the OpenShell sandbox
 | Re-release / remaster of the same audio | Same ISRC, new UPC → new `anchorRelease` |
 | Remaster with altered audio | Check the IFPI ISRC Handbook rules for the change made. Default when audio is materially changed: new ISRC, linked as derivative `remaster` |
 | Split dispute | `openDispute` freezes transfers and claimant edits; both claims stay visible; the arbiter appends the resolution |
-| Catalog sale | Two-step transfer; buyer inherits full history; the original assignment event is untouched |
+| Catalog sale | Two-step transfer; the buyer's acceptance names the agreement hash they reviewed and reverts if the claimant swapped it; buyer inherits full history; the original assignment event is untouched |
 | Bad metadata | `updateClaim` → new version, new hash; the old version stays verifiable; the verifier shows the diff |
 | SoundExchange mismatch | `metadata_conflict`, anchoring blocked, human reconciliation |
-| Duplicate ISRC found later | Arbiter `supersede(duplicate → survivor)`; the duplicate stays readable and points to the survivor |
+| Duplicate ISRC found later | Arbiter `supersede(duplicate → survivor)`; the survivor must be live and a record is superseded only once, so links never cycle; the duplicate stays readable and points to the survivor |
 | Network retry | Idempotency-Key + DB constraint + on-chain revert |
 
 ---
