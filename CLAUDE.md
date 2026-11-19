@@ -2,6 +2,8 @@
 
 On-chain IP timestamping: paid project creation, milestone registration with content hashes + IPFS references, and witness attestation. Single contract, [contracts/ProofStream.sol](contracts/ProofStream.sol) (Solidity 0.8.20, OpenZeppelin v5: Ownable, ReentrancyGuard, Pausable).
 
+The ISRC provenance registry is a separate contract, [contracts/isrc/ProofStreamISRCRegistry.sol](contracts/isrc/ProofStreamISRCRegistry.sol) (AccessControl roles: admin / issuer / arbiter; append-only versions). It does not modify ProofStream.sol. Spec and hashing rules: [docs/isrc/SPEC.md](docs/isrc/SPEC.md). Off-chain hashes must come from `scripts/isrc-hashing.cjs`.
+
 ## Commands
 
 | Command | Purpose |

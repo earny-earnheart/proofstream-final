@@ -1,0 +1,691 @@
+openapi: 3.1.0
+info:
+  title: ProofStream Auto-ISRC + Provenance API
+  version: 1.0.0-draft
+  summary: Assign an ISRC, anchor the claim, verify without trusting ProofStream.
+  description: |
+    SoundExchange / IFPI remain the authority for the ISRC itself. ProofStream records who
+    claimed what, when, and every change after that, and anchors it on Base.
+
+    Hash conventions (identical to contracts/isrc/ISRCRegistryModule.sol and scripts/isrc-hashing.cjs):
+    - `isrc_key` = keccak256(normalized ISRC, e.g. `USSKG2612345`)
+    - `upc_key` = keccak256(13-digit GTIN)
+    - `payload_hash` / `claim_hash` = sha256(RFC 8785 JCS canonical JSON)
+  contact:
+    name: Pantheon Consulting Group, Inc.
+    url: https://proofstreamapp.com
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://api.proofstreamapp.com
+    description: Production
+  - url: https://sandbox.api.proofstreamapp.com
+    description: Sandbox (Base Sepolia)
+security:
+  - oauth2: []
+tags:
+  - name: Recordings
+    description: Ingest audio and metadata; correct metadata as new versions.
+  - name: ISRC
+    description: Dedupe and assignment through IFPI-authorized channels.
+  - name: Releases
+    description: One UPC per release, linked to an ordered ISRC tracklist.
+  - name: Rights
+    description: Claims, splits, and transfers.
+  - name: Disputes
+    description: Freeze, arbitrate, and resolve competing claims.
+  - name: Verification
+    description: Public, unauthenticated.
+
+paths:
+  /v1/recordings:
+    post:
+      tags: [Recordings]
+      operationId: createRecording
+      summary: Ingest a recording (audio + metadata). Fingerprinting and dedupe start immediately.
+      security: [{ oauth2: [recordings:write] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordingCreate" }
+      responses:
+        "201":
+          description: Created. ISRC not yet assigned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recording" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+
+  /v1/recordings/{recording_id}:
+    parameters: [{ $ref: "#/components/parameters/RecordingId" }]
+    get:
+      tags: [Recordings]
+      operationId: getRecording
+      summary: Current state of a recording, including ISRC and anchor status.
+      security: [{ oauth2: [recordings:read] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recording" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [Recordings]
+      operationId: correctRecording
+      summary: Correct metadata. Creates a new version and a new hash; the old version stays verifiable.
+      security: [{ oauth2: [recordings:write] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                title: { type: string }
+                version: { $ref: "#/components/schemas/VersionType" }
+                language: { type: string, description: ISO 639-1 }
+                contributors:
+                  type: array
+                  items: { $ref: "#/components/schemas/Contributor" }
+                reason: { type: string, maxLength: 280 }
+      responses:
+        "200":
+          description: New version recorded and queued for anchoring.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recording" }
+        "409": { $ref: "#/components/responses/Problem" }
+
+  /v1/recordings/{recording_id}/dedupe-check:
+    parameters: [{ $ref: "#/components/parameters/RecordingId" }]
+    post:
+      tags: [ISRC]
+      operationId: dedupeCheck
+      summary: Dry run. Shows whether the recording already has an ISRC. Assigns nothing.
+      security: [{ oauth2: [isrc:assign] }]
+      responses:
+        "200":
+          description: Dedupe result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DedupeResult" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /v1/recordings/{recording_id}/assign-isrc:
+    parameters: [{ $ref: "#/components/parameters/RecordingId" }]
+    post:
+      tags: [ISRC]
+      operationId: assignIsrc
+      summary: Assign an ISRC, or return the existing one if the recording is already identified.
+      description: |
+        Runs dedupe first (audio hash, fingerprint, SoundExchange metadata match).
+        Idempotent: replaying the same Idempotency-Key returns the original result and never
+        creates a second ISRC. Routes through an IFPI-authorized channel, or queues to a partner
+        ISRC Manager when direct access is unavailable.
+      security: [{ oauth2: [isrc:assign] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKeyRequired" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                registrant_code:
+                  type: string
+                  pattern: "^[A-Z0-9]{3}$"
+                  description: Required only for the manager_pool route.
+                route:
+                  type: string
+                  enum: [auto, auto_assignment, manager_pool]
+                  default: auto
+      responses:
+        "200":
+          description: Assigned now, or an existing ISRC was matched.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IsrcAssignment" }
+        "202":
+          description: Queued to a partner ISRC Manager. Listen for the `isrc.assigned` webhook.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IsrcAssignment" }
+        "409":
+          description: Possible duplicate needs human review (metadata conflict). Nothing assigned.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+
+  /v1/recordings/{recording_id}/claims:
+    parameters: [{ $ref: "#/components/parameters/RecordingId" }]
+    put:
+      tags: [Rights]
+      operationId: setClaims
+      summary: Replace the full rights-claim set. Splits must total 10,000 bps per right type.
+      security: [{ oauth2: [rights:write] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claims]
+              properties:
+                claims:
+                  type: array
+                  minItems: 1
+                  items: { $ref: "#/components/schemas/RightsClaim" }
+                reason: { type: string, maxLength: 280 }
+      responses:
+        "200":
+          description: Claim set versioned; claim_hash queued for anchoring.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recording" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+
+  /v1/recordings/{recording_id}/transfers:
+    parameters: [{ $ref: "#/components/parameters/RecordingId" }]
+    post:
+      tags: [Rights]
+      operationId: proposeTransfer
+      summary: Propose a transfer of the claim (catalog sale, assignment). Buyer must accept.
+      security: [{ oauth2: [rights:write] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_account_id, agreement_evidence_hash]
+              properties:
+                to_account_id: { type: string }
+                agreement_evidence_hash: { $ref: "#/components/schemas/Hash32" }
+      responses:
+        "201":
+          description: Transfer pending acceptance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "409": { $ref: "#/components/responses/Problem" }
+
+  /v1/transfers/{transfer_id}/accept:
+    parameters:
+      - { name: transfer_id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Rights]
+      operationId: acceptTransfer
+      summary: Buyer accepts. Buyer inherits the full version history.
+      security: [{ oauth2: [rights:write] }]
+      responses:
+        "200":
+          description: Accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "409": { $ref: "#/components/responses/Problem" }
+
+  /v1/releases:
+    post:
+      tags: [Releases]
+      operationId: createRelease
+      summary: Create a release with one UPC and an ordered ISRC tracklist.
+      security: [{ oauth2: [releases:write] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReleaseCreate" }
+      responses:
+        "201":
+          description: Created; tracklist hash queued for anchoring.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "422": { $ref: "#/components/responses/Problem" }
+
+  /v1/releases/{upc}:
+    parameters:
+      - { name: upc, in: path, required: true, schema: { type: string, pattern: "^[0-9]{12,13}$" } }
+    get:
+      tags: [Releases]
+      operationId: getRelease
+      summary: Release and its tracklist.
+      security: [{ oauth2: [releases:read] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /v1/recordings/{recording_id}/disputes:
+    parameters: [{ $ref: "#/components/parameters/RecordingId" }]
+    post:
+      tags: [Disputes]
+      operationId: openDispute
+      summary: Open a dispute. Freezes transfers and claimant edits immediately; anchored without batching.
+      security: [{ oauth2: [disputes:write] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 2000 }
+                evidence_hashes:
+                  type: array
+                  items: { $ref: "#/components/schemas/Hash32" }
+      responses:
+        "201":
+          description: Dispute open.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "409": { $ref: "#/components/responses/Problem" }
+
+  /v1/disputes/{dispute_id}/resolve:
+    parameters:
+      - { name: dispute_id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Disputes]
+      operationId: resolveDispute
+      summary: Arbiter only. Appends the resolved claim set; the losing claim stays in history.
+      security: [{ oauth2: [disputes:arbitrate] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claimant_account_id, claims, ruling_evidence_hash]
+              properties:
+                claimant_account_id: { type: string }
+                claims:
+                  type: array
+                  items: { $ref: "#/components/schemas/RightsClaim" }
+                ruling_evidence_hash: { $ref: "#/components/schemas/Hash32" }
+      responses:
+        "200":
+          description: Resolved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /v1/verify:
+    get:
+      tags: [Verification]
+      operationId: verifyIsrc
+      summary: Public check that ProofStream's record matches what is anchored on-chain.
+      security: []
+      parameters:
+        - name: isrc
+          in: query
+          required: true
+          schema: { type: string, example: US-SKG-26-12345 }
+      responses:
+        "200":
+          description: Verification result. Public fields only; no PII or split details.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VerifyResult" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /v1/verify/{isrc}/history:
+    parameters:
+      - { name: isrc, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Verification]
+      operationId: verifyHistory
+      summary: Public version timeline with tx hashes and field-level diffs.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isrc: { type: string }
+                  versions:
+                    type: array
+                    items: { $ref: "#/components/schemas/PublicVersion" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /v1/recordings/{recording_id}/certificate:
+    parameters: [{ $ref: "#/components/parameters/RecordingId" }]
+    get:
+      tags: [Verification]
+      operationId: getCertificate
+      summary: PDF certificate with a QR code linking to the public verifier.
+      security: [{ oauth2: [recordings:read] }]
+      responses:
+        "200":
+          description: PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "409":
+          description: Not yet anchored.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+webhooks:
+  isrc.assigned:
+    post:
+      operationId: onIsrcAssigned
+      summary: An ISRC was assigned (including partner-queue completions).
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses: { "200": { description: Acknowledged } }
+  anchor.confirmed:
+    post:
+      operationId: onAnchorConfirmed
+      summary: A version, release, or batch reached the confirmation threshold on-chain.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses: { "200": { description: Acknowledged } }
+  dispute.opened:
+    post:
+      operationId: onDisputeOpened
+      summary: A dispute was opened on a recording you claim.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses: { "200": { description: Acknowledged } }
+  metadata.conflict:
+    post:
+      operationId: onMetadataConflict
+      summary: SoundExchange returned different metadata for this ISRC. Anchoring is paused until reconciled.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses: { "200": { description: Acknowledged } }
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: Auth0-issued JWTs (client credentials for labels/distributors, auth code + PKCE for users).
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.proofstreamapp.com/oauth/token
+          scopes:
+            recordings:read: Read recordings
+            recordings:write: Create and correct recordings
+            isrc:assign: Request ISRC assignment
+            releases:read: Read releases
+            releases:write: Create releases
+            rights:write: Set claims and transfer rights
+            disputes:write: Open disputes
+            disputes:arbitrate: Resolve disputes (arbiters only)
+
+  parameters:
+    RecordingId:
+      name: recording_id
+      in: path
+      required: true
+      schema: { type: string, example: rec_01JD8K4Z9X }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, maxLength: 128 }
+    IdempotencyKeyRequired:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Same key + same body returns the original response for 24h. Same key + different body returns 422.
+      schema: { type: string, maxLength: 128 }
+
+  responses:
+    Problem:
+      description: Error (RFC 9457 problem details).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Hash32:
+      type: string
+      pattern: "^0x[0-9a-f]{64}$"
+    Isrc:
+      type: string
+      description: Normalized form, 12 chars, no hyphens. Display form adds hyphens (CC-XXX-YY-NNNNN).
+      pattern: "^[A-Z]{2}[A-Z0-9]{3}[0-9]{2}[0-9]{5}$"
+      example: USSKG2612345
+    VersionType:
+      type: string
+      enum: [original, instrumental, remix, radio_edit, live, acoustic, remaster, extended, clean, explicit, other]
+    IsrcStatus:
+      type: string
+      enum: [pending, assigned, registered, disputed, superseded]
+    IsrcSource:
+      type: string
+      enum: [auto_assignment, manager_pool, distributor, manual, existing_match]
+    AnchorStatus:
+      type: string
+      enum: [not_anchored, queued, submitted, confirmed, failed]
+    Contributor:
+      type: object
+      required: [name, role]
+      properties:
+        name: { type: string }
+        role: { type: string, enum: [primary_artist, featured_artist, producer, writer, composer, engineer, performer] }
+        isni: { type: string }
+        ipi: { type: string }
+    RecordingCreate:
+      type: object
+      required: [title, version, audio_url, contributors]
+      properties:
+        title: { type: string, minLength: 1 }
+        version: { $ref: "#/components/schemas/VersionType" }
+        language: { type: string }
+        audio_url:
+          type: string
+          format: uri
+          description: Pre-signed upload URL or ipfs:// CID from the PCG IPFS vault.
+        contributors:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/Contributor" }
+        parent_isrc:
+          $ref: "#/components/schemas/Isrc"
+          description: Set for remixes and alternate versions. The new recording still gets its own ISRC.
+        existing_isrc:
+          $ref: "#/components/schemas/Isrc"
+          description: Claim an ISRC that was already assigned elsewhere. Checked against SoundExchange.
+        claims:
+          type: array
+          items: { $ref: "#/components/schemas/RightsClaim" }
+    Recording:
+      type: object
+      properties:
+        recording_id: { type: string }
+        isrc: { $ref: "#/components/schemas/Isrc" }
+        isrc_status: { $ref: "#/components/schemas/IsrcStatus" }
+        isrc_source: { $ref: "#/components/schemas/IsrcSource" }
+        isrc_assigned_at: { type: string, format: date-time }
+        title: { type: string }
+        version: { $ref: "#/components/schemas/VersionType" }
+        audio_hash_sha256: { $ref: "#/components/schemas/Hash32" }
+        fingerprint_id: { type: string, description: Chromaprint/AcoustID fingerprint reference }
+        duration_ms: { type: integer }
+        record_version: { type: integer, description: Current version index (0-based) }
+        payload_hash: { $ref: "#/components/schemas/Hash32" }
+        claim_hash: { $ref: "#/components/schemas/Hash32" }
+        anchor: { $ref: "#/components/schemas/Anchor" }
+        metadata_conflict: { type: boolean }
+    DedupeResult:
+      type: object
+      properties:
+        outcome: { type: string, enum: [no_match, exact_match, probable_match, metadata_conflict] }
+        matched_isrc: { $ref: "#/components/schemas/Isrc" }
+        score: { type: number, minimum: 0, maximum: 1 }
+        signals:
+          type: object
+          properties:
+            audio_hash_exact: { type: boolean }
+            fingerprint_similarity: { type: number }
+            metadata_match: { type: boolean, description: title + primary artist + duration ±2s + version }
+        requires_review: { type: boolean }
+    IsrcAssignment:
+      type: object
+      properties:
+        recording_id: { type: string }
+        isrc: { $ref: "#/components/schemas/Isrc" }
+        isrc_display: { type: string, example: US-SKG-26-12345 }
+        status: { $ref: "#/components/schemas/IsrcStatus" }
+        source: { $ref: "#/components/schemas/IsrcSource" }
+        assigned_at: { type: string, format: date-time }
+        duplicate_prevented: { type: boolean }
+        anchor: { $ref: "#/components/schemas/Anchor" }
+    RightsClaim:
+      type: object
+      required: [role, right_type, split_bps]
+      properties:
+        claimant_account_id: { type: string }
+        role: { type: string, enum: [master_owner, publisher, writer, producer, featured_artist] }
+        right_type: { type: string, enum: [master, publishing, neighboring] }
+        split_bps: { type: integer, minimum: 1, maximum: 10000 }
+        ipi: { type: string }
+        iswc: { type: string }
+        territories:
+          type: array
+          items: { type: string, description: "ISO 3166-1 alpha-2, or WW for worldwide" }
+        term_start: { type: string, format: date }
+        term_end: { type: string, format: date }
+        exclusive: { type: boolean }
+        evidence_hashes:
+          type: array
+          description: sha256 of split sheets, licenses, contracts. Documents stay off-chain, encrypted.
+          items: { $ref: "#/components/schemas/Hash32" }
+    ReleaseCreate:
+      type: object
+      required: [upc, release_title, release_type, isrcs]
+      properties:
+        upc: { type: string, pattern: "^[0-9]{12,13}$", description: Check digit validated }
+        release_title: { type: string }
+        release_type: { type: string, enum: [single, ep, album, compilation] }
+        release_date: { type: string, format: date }
+        label: { type: string }
+        distributor: { type: string }
+        isrcs:
+          type: array
+          description: Ordered tracklist.
+          minItems: 1
+          items: { $ref: "#/components/schemas/Isrc" }
+    Release:
+      allOf:
+        - $ref: "#/components/schemas/ReleaseCreate"
+        - type: object
+          properties:
+            tracklist_hash: { $ref: "#/components/schemas/Hash32" }
+            release_version: { type: integer }
+            anchor: { $ref: "#/components/schemas/Anchor" }
+    Transfer:
+      type: object
+      properties:
+        transfer_id: { type: string }
+        isrc: { $ref: "#/components/schemas/Isrc" }
+        from_account_id: { type: string }
+        to_account_id: { type: string }
+        status: { type: string, enum: [pending, accepted, cancelled, blocked_by_dispute] }
+        anchor: { $ref: "#/components/schemas/Anchor" }
+    Dispute:
+      type: object
+      properties:
+        dispute_id: { type: string }
+        isrc: { $ref: "#/components/schemas/Isrc" }
+        status: { type: string, enum: [open, resolved] }
+        opened_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time }
+        anchor: { $ref: "#/components/schemas/Anchor" }
+    Anchor:
+      type: object
+      properties:
+        status: { $ref: "#/components/schemas/AnchorStatus" }
+        chain_id: { type: integer, example: 8453 }
+        contract: { type: string }
+        tx_hash: { type: string }
+        block_number: { type: integer }
+        batch_id: { type: integer, description: Present when anchored via a Merkle batch }
+        merkle_proof:
+          type: array
+          items: { $ref: "#/components/schemas/Hash32" }
+    VerifyResult:
+      type: object
+      properties:
+        valid: { type: boolean }
+        isrc: { type: string, example: US-SKG-26-12345 }
+        title: { type: string }
+        version: { $ref: "#/components/schemas/VersionType" }
+        claimant_public_name: { type: string }
+        status: { $ref: "#/components/schemas/IsrcStatus" }
+        payload_hash: { $ref: "#/components/schemas/Hash32" }
+        onchain_payload_hash: { $ref: "#/components/schemas/Hash32" }
+        onchain_hash_match: { type: boolean }
+        record_version: { type: integer }
+        anchored_at: { type: string, format: date-time }
+        chain_id: { type: integer }
+        tx_hash: { type: string }
+        dispute_status: { type: string, enum: [none, open, resolved] }
+        superseded_by: { type: string }
+        soundexchange_match:
+          type: string
+          enum: [match, conflict, not_checked]
+        verifier_url: { type: string, format: uri }
+    PublicVersion:
+      type: object
+      properties:
+        record_version: { type: integer }
+        payload_hash: { $ref: "#/components/schemas/Hash32" }
+        event_type: { type: string, enum: [registered, corrected, claims_changed, transferred, dispute_opened, dispute_resolved, superseded] }
+        changed_fields:
+          type: array
+          items: { type: string }
+        anchored_at: { type: string, format: date-time }
+        tx_hash: { type: string }
+    WebhookEvent:
+      type: object
+      required: [id, type, created_at, data]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        created_at: { type: string, format: date-time }
+        data: { type: object }
+    Problem:
+      type: object
+      properties:
+        type: { type: string, format: uri, example: https://proofstreamapp.com/errors/duplicate-review }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        matched_isrc: { type: string }
