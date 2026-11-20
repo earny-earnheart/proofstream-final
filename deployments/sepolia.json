@@ -22,6 +22,18 @@
       "compiledAt": "2026-09-02T16:25:00.000Z",
       "verified": true,
       "explorerUrl": "https://sepolia.etherscan.io/address/0x28196FbEA33E4a1BDd5d558C6b77166a49F15b90"
+    },
+    {
+      "contract": "ProofStreamRegistry",
+      "address": "0xD49e374c9e267823C00a262eAf19fCfb2CaDc17D",
+      "txHash": "0xd44f74b5399f098fa042e7253a29355f6b5851cfed1ac64db7642197ca0206c0",
+      "blockNumber": 12173783,
+      "deployer": "0x24B34AbA44CDFD995fCdD0228D52DF86F0Ca17e2",
+      "admin": "0x24B34AbA44CDFD995fCdD0228D52DF86F0Ca17e2",
+      "compiledAt": "2026-11-20T07:12:01.035Z",
+      "verified": true,
+      "explorerUrl": "https://sepolia.etherscan.io/address/0xD49e374c9e267823C00a262eAf19fCfb2CaDc17D#code",
+      "issuer": "0x0Afe084E35E9777eA92Ee6bC30e8EB05c5961178"
     }
   ]
 }
