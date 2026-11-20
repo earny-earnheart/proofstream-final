@@ -40,7 +40,7 @@ async function main() {
   console.log("block    :", receipt.blockNumber);
   console.log("─".repeat(60));
 
-  if (hre.network.name === "hardhat") return;
+  if (hre.network.name === "hardhat" || hre.network.name === "localhost") return;
   const file = path.join(__dirname, "..", "deployments", `${hre.network.name}.json`);
   const log = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { network: hre.network.name, chainId: Number(network.chainId), history: [] };
   log.history.push({
