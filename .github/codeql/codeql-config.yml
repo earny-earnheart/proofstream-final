@@ -1,0 +1,16 @@
+name: ProofStream CodeQL config
+
+# Dependency trees and generated build output are not first-party source.
+# site/dist is the site's JavaScript (there is no separate site source tree)
+# and is intentionally left in scope. A root-only dist/ or bundle/ directory
+# is the Hardhat/compile output named in .gitignore.
+paths-ignore:
+  - "**/node_modules"
+  - "**/artifacts"
+  - "**/cache"
+  - "**/coverage"
+  - coverage.json
+  - "types/**"
+  - "dist/**"
+  - "bundle/**"
+  - "**/.wrangler"
